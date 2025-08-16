@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = "7054945394:AAGbjMWSwcH_MGQCoorLVBhBxF6tJd9KcQg"
 
 # Shop URL placeholder - replace with your actual shop URL
-SHOP_URL = "https://t.me/your_shop_channel"
+SHOP_URL = "https://t.me/jesserobertsonshop"
 
 # Payment methods message
 PAYMENT_MESSAGE = "We accept the following payment method:\n\n• Apple Pay\n• Zelle\n• Cash App (Bitcoin)\n• PayPal"
@@ -30,7 +30,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """
     try:
         welcome_message = (
-            "🎉 Welcome to the HACKSAGE bot!\n\n"
+            "🎉 Welcome to the our bot!\n\n"
             "Choose an option from the menu below to get started:"
         )
 
