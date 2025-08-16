@@ -22,6 +22,8 @@ BOT_TOKEN = "7054945394:AAGbjMWSwcH_MGQCoorLVBhBxF6tJd9KcQg"
 # Channel URL placeholder - replace with your actual channel URL
 CHANNEL_URL = "https://t.me/your_channel_name"
 
+CHANNEL_URL2 = "https://www.instagram.com/hacksagex/"
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handle the /start command by sending welcome message with inline keyboard menu.
@@ -35,7 +37,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Create inline keyboard with two buttons
         keyboard = [
             [InlineKeyboardButton("📦 Join our channel to see products", url=CHANNEL_URL)],
-            [InlineKeyboardButton("⭐️ Reviews & Touch Down", callback_data="reviews")]
+            [InlineKeyboardButton("⭐️ Reviews & Touch Down", url=CHANNEL_URL2)]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
