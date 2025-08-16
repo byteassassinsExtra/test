@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """
-Online Shop Telegram Bot
+Telegram Bot with Interactive Menu
 Compatible with Python 3.13 and python-telegram-bot library
 """
 
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+import json
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+    ConversationHandler,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -15,134 +24,85 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Bot configuration - replace with your actual values
+# Bot token placeholder - replace with your actual bot token
 BOT_TOKEN = "7054945394:AAGbjMWSwcH_MGQCoorLVBhBxF6tJd9KcQg"
-SHOP_CHANNEL = "https://t.me/your_channel_name"
-INSTAGRAM_URL = "https://www.instagram.com/hacksagex/"
-SUPPORT_USERNAME = "@your_support_username"
+
+# Shop URL placeholder - replace with your actual shop URL
+SHOP_URL = "https://t.me/your_shop_channel"
+
+# Admin chat ID for anonymous chat support. Replace with your actual chat ID.
+ADMIN_CHAT_ID = 1201917438
+
+# File to store banned user IDs. This provides basic persistence.
+BANNED_USERS_FILE = "banned_users.json"
+
+# Conversation states for the chat support feature
+CHAT_SUPPORT = range(1)
+
+# Payment methods message
+PAYMENT_MESSAGE = "We offer the following payment options:\n\n• Apple Pay\n• Zelle\n• Cash App (Bitcoin)\n• PayPal"
+
+def load_banned_users() -> list:
+    """Loads banned user IDs from a file."""
+    try:
+        with open(BANNED_USERS_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+def save_banned_users(banned_users: list):
+    """Saves banned user IDs to a file."""
+    with open(BANNED_USERS_FILE, 'w') as f:
+        json.dump(banned_users, f)
+
+def is_banned(user_id: int) -> bool:
+    """Checks if a user is in the banned list."""
+    return user_id in load_banned_users()
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /start command with shop main menu"""
+    """
+    Handle the /start command by sending a welcome message with an inline keyboard menu.
+    """
     try:
-        user = update.effective_user
         welcome_message = (
-            f"🛍️ Welcome to our Online Shop, {user.first_name}!\n\n"
-            "🎯 Your one-stop destination for quality products\n"
-            "Choose from the options below:"
+            "🎉 Welcome to the HACKSAGE bot!\n\n"
+            "Choose an option from the menu below to get started:"
         )
-        
+
+        # Create the initial keyboard with fixed buttons
         keyboard = [
-            [InlineKeyboardButton("🛒 Browse Products", callback_data="browse_products")],
-            [InlineKeyboardButton("📦 My Orders", callback_data="my_orders")],
-            [InlineKeyboardButton("🎁 Special Offers", callback_data="offers")],
-            [InlineKeyboardButton("📞 Customer Support", callback_data="support")],
-            [InlineKeyboardButton("⭐ Reviews", callback_data="reviews")],
-            [InlineKeyboardButton("ℹ️ Shop Info", callback_data="shop_info")]
+            [InlineKeyboardButton("🛒 View Shop", url=SHOP_URL)],
+            [InlineKeyboardButton("💰 Payment Methods", callback_data="show_payments")],
+            [InlineKeyboardButton("💬 Chat Support", callback_data="start_chat_support")],
         ]
+
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
-        logger.info(f"Start command sent to user {user.id}")
-        
+
+        await update.message.reply_text(
+            welcome_message,
+            reply_markup=reply_markup
+        )
+
+        logger.info(f"Start command sent to user {update.effective_user.id}")
+
     except Exception as e:
         logger.error(f"Error in start_command: {e}")
-        await update.message.reply_text("Sorry, something went wrong. Please try again later.")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show available commands for shop"""
-    try:
-        help_text = (
-            "🛍️ **Shop Commands:**\n\n"
-            "/start - Shop main menu\n"
-            "/help - Show this help\n"
-            "/products - Browse all products\n"
-            "/orders - Check your orders\n"
-            "/offers - Current deals & offers\n"
-            "/contact - Contact support\n"
-            "/track - Track your order\n\n"
-            "💡 Use the menu buttons for easy navigation!"
+        await update.message.reply_text(
+            "Sorry, something went wrong. Please try again later."
         )
-        
-        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(help_text, reply_markup=reply_markup, parse_mode='Markdown')
-        
-    except Exception as e:
-        logger.error(f"Error in help_command: {e}")
-
-async def products_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show products directly"""
-    await show_products_menu_message(update.message)
-
-async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show orders directly"""
-    await show_orders_menu_message(update.message)
-
-async def contact_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show contact info directly"""
-    contact_text = (
-        "📞 **Contact Our Support Team**\n\n"
-        "💬 Telegram Support: @your_support_username\n"
-        "📧 Email: support@yourshop.com\n"
-        "⏰ Working Hours: 9 AM - 9 PM (Mon-Sat)\n"
-        "📱 WhatsApp: +91-XXXXXXXXXX\n\n"
-        "We're here to help with:\n"
-        "• Product inquiries\n"
-        "• Order assistance\n"
-        "• Returns & refunds\n"
-        "• Technical support"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("💬 Contact Support", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(contact_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle button clicks from inline keyboards"""
+    """
+    Handle button clicks from the inline keyboard.
+    """
     try:
         query = update.callback_query
         await query.answer()
-        
-        if query.data == "main_menu":
-            await show_main_menu(query)
-        elif query.data == "browse_products":
-            await show_products_menu(query)
-        elif query.data == "my_orders":
-            await show_orders_menu(query)
-        elif query.data == "offers":
-            await show_offers_menu(query)
-        elif query.data == "support":
-            await show_support_menu(query)
-        elif query.data == "reviews":
-            await show_reviews_menu(query)
-        elif query.data == "shop_info":
-            await show_shop_info(query)
-        elif query.data == "categories":
-            await show_categories(query)
-        elif query.data == "search_products":
-            await search_products_info(query)
-        elif query.data == "track_order":
-            await track_order_info(query)
-        elif query.data == "order_history":
-            await show_order_history(query)
-        elif query.data == "current_offers":
-            await show_current_offers(query)
-        elif query.data == "new_arrivals":
-            await show_new_arrivals(query)
-        elif query.data == "best_sellers":
-            await show_best_sellers(query)
-        elif query.data == "return_policy":
-            await show_return_policy(query)
-        elif query.data == "shipping_info":
-            await show_shipping_info(query)
-        elif query.data == "payment_methods":
-            await show_payment_methods(query)
-        
+
+        if query.data == "show_payments":
+            await query.edit_message_text(text=PAYMENT_MESSAGE)
+            logger.info(f"Payment methods shown to user {update.effective_user.id}")
+
     except Exception as e:
         logger.error(f"Error in button_callback: {e}")
         try:
@@ -150,372 +110,206 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except:
             pass
 
-async def show_main_menu(query):
-    """Show the main shop menu"""
-    welcome_message = (
-        "🛍️ **Online Shop - Main Menu**\n\n"
-        "Choose what you'd like to do:"
+async def start_chat_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Starts the conversation for chat support.
+    """
+    user_id = update.effective_user.id
+    if is_banned(user_id):
+        await update.effective_message.reply_text(
+            "You are currently banned from using chat support."
+        )
+        return ConversationHandler.END
+
+    await update.effective_message.reply_text(
+        "You are now connected to chat support. Please type your message.\n"
+        "To end the chat, type /endchat."
     )
     
-    keyboard = [
-        [InlineKeyboardButton("🛒 Browse Products", callback_data="browse_products")],
-        [InlineKeyboardButton("📦 My Orders", callback_data="my_orders")],
-        [InlineKeyboardButton("🎁 Special Offers", callback_data="offers")],
-        [InlineKeyboardButton("📞 Customer Support", callback_data="support")],
-        [InlineKeyboardButton("⭐ Reviews", callback_data="reviews")],
-        [InlineKeyboardButton("ℹ️ Shop Info", callback_data="shop_info")]
+    # Send a notification to the admin with action buttons
+    user_name = update.effective_user.full_name
+    admin_keyboard = [
+        [
+            InlineKeyboardButton("Ban User", callback_data=f"ban_user_{user_id}"),
+        ]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
+    reply_markup = InlineKeyboardMarkup(admin_keyboard)
 
-async def show_products_menu(query):
-    """Show products browsing options"""
-    products_message = (
-        "🛒 **Browse Our Products**\n\n"
-        "Find exactly what you're looking for:"
+    admin_message_text = (
+        f"An anonymous user has started a chat session.\n"
+        f"Name: {user_name}\n"
+        f"Chat ID: {user_id}"
     )
     
-    keyboard = [
-        [InlineKeyboardButton("📱 View All Products", url=SHOP_CHANNEL)],
-        [InlineKeyboardButton("📂 Categories", callback_data="categories")],
-        [InlineKeyboardButton("🔥 Best Sellers", callback_data="best_sellers")],
-        [InlineKeyboardButton("🆕 New Arrivals", callback_data="new_arrivals")],
-        [InlineKeyboardButton("🔍 Search Products", callback_data="search_products")],
-        [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Store the user's ID to map to the admin chat
+    context.bot_data['chat_session'] = user_id
     
-    await query.edit_message_text(products_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def show_orders_menu(query):
-    """Show order management options"""
-    orders_message = (
-        "📦 **Order Management**\n\n"
-        "Track and manage your orders:"
+    # Send the admin message and store its ID for reply context
+    admin_message = await context.bot.send_message(
+        chat_id=ADMIN_CHAT_ID,
+        text=admin_message_text,
+        reply_markup=reply_markup
     )
-    
-    keyboard = [
-        [InlineKeyboardButton("🔍 Track Order", callback_data="track_order")],
-        [InlineKeyboardButton("📋 Order History", callback_data="order_history")],
-        [InlineKeyboardButton("🔄 Return/Exchange", callback_data="return_policy")],
-        [InlineKeyboardButton("📞 Order Support", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")],
-        [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(orders_message, reply_markup=reply_markup, parse_mode='Markdown')
+    # Store the admin message ID to enable replies
+    context.user_data['admin_message_id'] = admin_message.message_id
 
-async def show_offers_menu(query):
-    """Show current offers and deals"""
-    offers_message = (
-        "🎁 **Special Offers & Deals**\n\n"
-        "Don't miss out on amazing savings!"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("🔥 Current Offers", callback_data="current_offers")],
-        [InlineKeyboardButton("⚡ Flash Sales", url=SHOP_CHANNEL)],
-        [InlineKeyboardButton("💰 Discount Codes", callback_data="discount_codes")],
-        [InlineKeyboardButton("🎯 Bundle Deals", callback_data="bundle_deals")],
-        [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(offers_message, reply_markup=reply_markup, parse_mode='Markdown')
+    logger.info(f"Chat support started for user {user_id}")
+    return CHAT_SUPPORT
 
-async def show_support_menu(query):
-    """Show customer support options"""
-    support_message = (
-        "📞 **Customer Support**\n\n"
-        "We're here to help you 24/7:"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("💬 Live Chat", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")],
-        [InlineKeyboardButton("❓ FAQ", callback_data="faq")],
-        [InlineKeyboardButton("📧 Email Support", callback_data="email_support")],
-        [InlineKeyboardButton("🚚 Shipping Info", callback_data="shipping_info")],
-        [InlineKeyboardButton("💳 Payment Help", callback_data="payment_methods")],
-        [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(support_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def show_reviews_menu(query):
-    """Show reviews and testimonials"""
-    reviews_message = (
-        "⭐ **Customer Reviews**\n\n"
-        "See what our customers say about us:"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("📱 View on Instagram", url=INSTAGRAM_URL)],
-        [InlineKeyboardButton("⭐ Leave a Review", callback_data="leave_review")],
-        [InlineKeyboardButton("📊 Our Ratings", callback_data="our_ratings")],
-        [InlineKeyboardButton("📸 Customer Photos", url=INSTAGRAM_URL)],
-        [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(reviews_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def show_shop_info(query):
-    """Show shop information"""
-    shop_info_message = (
-        "ℹ️ **About Our Shop**\n\n"
-        "🏪 **Shop Name:** Your Online Store\n"
-        "📅 **Established:** 2020\n"
-        "🌍 **Location:** India\n"
-        "📦 **Products:** 500+ Items\n"
-        "⭐ **Rating:** 4.8/5\n"
-        "🚚 **Delivery:** Pan India\n\n"
-        "✅ **Why Choose Us:**\n"
-        "• Genuine products only\n"
-        "• Fast & secure delivery\n"
-        "• 24/7 customer support\n"
-        "• Easy returns & refunds\n"
-        "• Best prices guaranteed"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("🚚 Shipping Policy", callback_data="shipping_info")],
-        [InlineKeyboardButton("🔄 Return Policy", callback_data="return_policy")],
-        [InlineKeyboardButton("💳 Payment Methods", callback_data="payment_methods")],
-        [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(shop_info_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def show_categories(query):
-    """Show product categories"""
-    categories_message = (
-        "📂 **Product Categories**\n\n"
-        "Browse by category:"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("👕 Fashion & Clothing", url=SHOP_CHANNEL)],
-        [InlineKeyboardButton("📱 Electronics", url=SHOP_CHANNEL)],
-        [InlineKeyboardButton("🏠 Home & Living", url=SHOP_CHANNEL)],
-        [InlineKeyboardButton("💄 Beauty & Care", url=SHOP_CHANNEL)],
-        [InlineKeyboardButton("⚽ Sports & Fitness", url=SHOP_CHANNEL)],
-        [InlineKeyboardButton("🏠 Back to Products", callback_data="browse_products")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(categories_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def show_current_offers(query):
-    """Show current offers"""
-    offers_message = (
-        "🔥 **Current Offers**\n\n"
-        "💥 **MEGA SALE - 50% OFF**\n"
-        "Valid till: This Weekend\n\n"
-        "🎯 **Buy 2 Get 1 FREE**\n"
-        "On selected items\n\n"
-        "💰 **Flat ₹500 OFF**\n"
-        "On orders above ₹2000\n"
-        "Code: SAVE500\n\n"
-        "🚚 **FREE SHIPPING**\n"
-        "On all orders above ₹999"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("🛍️ Shop Now", url=SHOP_CHANNEL)],
-        [InlineKeyboardButton("🏠 Back to Offers", callback_data="offers")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(offers_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def track_order_info(query):
-    """Show order tracking info"""
-    track_message = (
-        "🔍 **Track Your Order**\n\n"
-        "To track your order, please send us:\n"
-        "📋 Your Order ID\n"
-        "📱 Registered Phone Number\n\n"
-        "**Format:** \n"
-        "Order ID: #12345\n"
-        "Phone: +91XXXXXXXXXX\n\n"
-        "Our support team will help you track your order instantly!"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("💬 Send Order Details", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")],
-        [InlineKeyboardButton("🏠 Back to Orders", callback_data="my_orders")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(track_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def show_shipping_info(query):
-    """Show shipping information"""
-    shipping_message = (
-        "🚚 **Shipping Information**\n\n"
-        "📦 **Delivery Time:**\n"
-        "• Metro Cities: 2-3 days\n"
-        "• Other Cities: 4-7 days\n"
-        "• Remote Areas: 7-10 days\n\n"
-        "💰 **Shipping Charges:**\n"
-        "• FREE on orders ₹999+\n"
-        "• ₹99 for orders below ₹999\n\n"
-        "📋 **What we need:**\n"
-        "• Complete address\n"
-        "• PIN code\n"
-        "• Contact number\n\n"
-        "✅ We ship pan India!"
-    )
-    
-    keyboard = [[InlineKeyboardButton("🏠 Back", callback_data="shop_info")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(shipping_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def show_payment_methods(query):
-    """Show payment methods"""
-    payment_message = (
-        "💳 **Payment Methods**\n\n"
-        "We accept all major payment methods:\n\n"
-        "💳 **Cards:**\n"
-        "• Debit Cards\n"
-        "• Credit Cards\n"
-        "• International Cards\n\n"
-        "📱 **Digital Payments:**\n"
-        "• Google Pay\n"
-        "• PhonePe\n"
-        "• Paytm\n"
-        "• UPI\n\n"
-        "🏦 **Banking:**\n"
-        "• Net Banking\n"
-        "• Bank Transfer\n\n"
-        "💰 **Cash on Delivery**\n"
-        "Available in select areas"
-    )
-    
-    keyboard = [[InlineKeyboardButton("🏠 Back", callback_data="shop_info")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(payment_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def show_products_menu_message(message):
-    """Show products menu as a new message"""
-    products_message = (
-        "🛒 **Browse Our Products**\n\n"
-        "Find exactly what you're looking for:"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("📱 View All Products", url=SHOP_CHANNEL)],
-        [InlineKeyboardButton("📂 Categories", callback_data="categories")],
-        [InlineKeyboardButton("🔥 Best Sellers", callback_data="best_sellers")],
-        [InlineKeyboardButton("🆕 New Arrivals", callback_data="new_arrivals")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await message.reply_text(products_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def show_orders_menu_message(message):
-    """Show orders menu as a new message"""
-    orders_message = (
-        "📦 **Order Management**\n\n"
-        "Track and manage your orders:"
-    )
-    
-    keyboard = [
-        [InlineKeyboardButton("🔍 Track Order", callback_data="track_order")],
-        [InlineKeyboardButton("📋 Order History", callback_data="order_history")],
-        [InlineKeyboardButton("🔄 Return/Exchange", callback_data="return_policy")],
-        [InlineKeyboardButton("📞 Order Support", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await message.reply_text(orders_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text messages from users"""
-    try:
-        text = update.message.text.lower()
-        
-        # Order tracking
-        if "order" in text and "#" in text:
-            await update.message.reply_text(
-                "🔍 **Order Inquiry Received!**\n\n"
-                "Our support team will help you track your order.\n"
-                "Please contact our support for immediate assistance."
+async def handle_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Forwards messages from the user to the admin.
+    """
+    user_id = update.effective_user.id
+    if user_id == context.bot_data.get('chat_session'):
+        try:
+            admin_message_id = context.user_data.get('admin_message_id')
+            await context.bot.send_message(
+                chat_id=ADMIN_CHAT_ID,
+                text=f"User ({user_id}): {update.message.text}",
+                reply_to_message_id=admin_message_id
             )
-        
-        # Product inquiry
-        elif any(word in text for word in ['price', 'cost', 'buy', 'purchase', 'product']):
-            keyboard = [
-                [InlineKeyboardButton("🛒 Browse Products", url=SHOP_CHANNEL)],
-                [InlineKeyboardButton("💬 Contact Support", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            logger.info(f"User {user_id} sent message: '{update.message.text}'")
+        except Exception as e:
+            logger.error(f"Error forwarding message to admin: {e}")
+            await update.effective_message.reply_text("There was an error sending your message. Please try again later.")
+
+    return CHAT_SUPPORT
+
+async def end_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Ends the chat support conversation for both user and admin.
+    """
+    user_id = update.effective_user.id
+    
+    if user_id == ADMIN_CHAT_ID:
+        # Admin ends the chat
+        if context.bot_data.get('chat_session'):
+            user_to_end = context.bot_data.pop('chat_session')
+            context.user_data.pop('admin_message_id', None)
             
-            await update.message.reply_text(
-                "🛍️ **Looking for products?**\n\n"
-                "Check our product catalog or contact support for personalized assistance!",
-                reply_markup=reply_markup
+            await context.bot.send_message(
+                chat_id=user_to_end,
+                text="The chat session has been ended by the admin."
             )
-        
+            await update.effective_message.reply_text("You have ended the chat session.")
+            logger.info(f"Admin ended chat with user {user_to_end}")
+    
+    elif context.bot_data.get('chat_session') == user_id:
+        # User ends the chat
+        await update.effective_message.reply_text(
+            "The chat session has been ended. You can use /start to begin a new session."
+        )
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=f"The user ({user_id}) has ended the chat session."
+        )
+        context.bot_data.pop('chat_session', None)
+        context.user_data.pop('admin_message_id', None)
+        logger.info(f"User {user_id} ended the chat.")
+
+    return ConversationHandler.END
+
+async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handles admin actions from inline buttons (like Ban).
+    """
+    query = update.callback_query
+    await query.answer()
+
+    if query.data.startswith("ban_user_"):
+        user_id_to_ban = int(query.data.split("_")[-1])
+        banned_users = load_banned_users()
+        if user_id_to_ban not in banned_users:
+            banned_users.append(user_id_to_ban)
+            save_banned_users(banned_users)
+            await query.edit_message_text(f"User {user_id_to_ban} has been banned.")
+            logger.info(f"Admin {ADMIN_CHAT_ID} banned user {user_id_to_ban}.")
         else:
-            # Default response for unrecognized messages
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                "👋 Hello! I'm your shopping assistant.\n"
-                "Use /help to see available commands or click the menu below:",
-                reply_markup=reply_markup
+            await query.edit_message_text(f"User {user_id_to_ban} is already banned.")
+            logger.info(f"Admin tried to ban an already banned user {user_id_to_ban}.")
+
+        # End the chat session for the banned user
+        if context.bot_data.get('chat_session') == user_id_to_ban:
+            context.bot_data.pop('chat_session', None)
+            await context.bot.send_message(
+                chat_id=user_id_to_ban,
+                text="You have been banned from using chat support. The session has been ended."
             )
-    
-    except Exception as e:
-        logger.error(f"Error in handle_text_message: {e}")
+
+async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handles replies from the admin back to the anonymous user.
+    """
+    if update.effective_chat.id == ADMIN_CHAT_ID and update.message.reply_to_message:
+        # The replied-to message is the user's forwarded message
+        try:
+            # We need to find the user's ID from the replied-to message
+            original_text = update.message.reply_to_message.text
+            user_id_str = original_text.split("User (")[-1].split("):")[0]
+            user_id = int(user_id_str)
+            
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"Admin: {update.message.text}"
+            )
+            logger.info(f"Admin replied to user {user_id}: '{update.message.text}'")
+        except (ValueError, IndexError):
+            # This handles cases where the message format is unexpected
+            await update.effective_message.reply_text("Could not determine the user's chat ID from the message.")
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle errors that occur during bot operation"""
+    """
+    Handle errors that occur during bot operation.
+    """
     logger.error(f"Update {update} caused error {context.error}")
 
 def main() -> None:
-    """Main function to set up and run the shop bot"""
+    """
+    Main function to set up and run the bot.
+    """
     try:
-        # Create the Application
+        if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+            logger.error("Please replace BOT_TOKEN with your actual bot token!")
+            print("❌ Error: Please replace BOT_TOKEN with your actual bot token!")
+            return
+
         application = Application.builder().token(BOT_TOKEN).build()
-        
-        # Add command handlers
+
+        # Conversation handler for the chat support
+        conv_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(start_chat_support, pattern="^start_chat_support$")],
+            states={
+                CHAT_SUPPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_chat_message)],
+            },
+            fallbacks=[CommandHandler("endchat", end_chat_command)],
+        )
+
+        # Add handlers
         application.add_handler(CommandHandler("start", start_command))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("products", products_command))
-        application.add_handler(CommandHandler("orders", orders_command))
-        application.add_handler(CommandHandler("contact", contact_command))
-        
-        # Add callback query handler for inline buttons
+        application.add_handler(CommandHandler("endchat", end_chat_command))
         application.add_handler(CallbackQueryHandler(button_callback))
+        application.add_handler(conv_handler)
         
-        # Add message handler for text messages
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
-        
+        # Admin action handlers
+        application.add_handler(MessageHandler(
+            filters.REPLY & filters.User(ADMIN_CHAT_ID), handle_admin_reply
+        ))
+        application.add_handler(CallbackQueryHandler(
+            handle_admin_actions, pattern="^ban_user_")
+        )
+
         # Add error handler
         application.add_error_handler(error_handler)
-        
-        # Log startup
-        logger.info("Online Shop Bot is starting...")
-        print("🛍️ Online Shop Bot is starting...")
-        print(f"📱 Shop Channel: {SHOP_CHANNEL}")
-        print(f"📷 Instagram: {INSTAGRAM_URL}")
-        print(f"📞 Support: {SUPPORT_USERNAME}")
-        print("💡 Make sure to replace URLs with actual values!")
+
+        logger.info("Bot is starting...")
+        print("🚀 Bot is starting...")
+        print("💡 Remember to set your actual BOT_TOKEN and SHOP_URL!")
+        print(f"💡 Your admin chat ID is set to: {ADMIN_CHAT_ID}.")
         print("🔄 Bot is running... Press Ctrl+C to stop.")
-        
-        # Run the bot
+
         application.run_polling(drop_pending_updates=True)
-        
+
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
         print(f"❌ Failed to start bot: {e}")
